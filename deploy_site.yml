@@ -1,0 +1,55 @@
+---
+- name: Deploy Apache 
+  hosts: apache
+  gather_facts: yes
+  vars:
+    student_number: "s229228372"
+    image_name: "apache_{{ student_number }}"
+    container_name: "httpd_{{ student_number }}"
+    host_port: 8090
+    build_dir: "/home/devasc/{{ student_number }}_apache"
+
+  tasks:
+    - name: Create build directory
+      file:
+        path: "{{ build_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Generate index.html
+      template:
+        src: "templates/index.html.j2"
+        dest: "{{ build_dir }}/index.html"
+        mode: '0644'
+
+    - name: Create Dockerfile in build directory
+      copy:
+        dest: "{{ build_dir }}/Dockerfile"
+        content: |
+          FROM httpd:alpine
+          COPY ./index.html /usr/local/apache2/htdocs/index.html
+          EXPOSE 80
+        mode: '0644'
+
+    - name: Build the Docker image
+      command: docker build -t {{ image_name }} {{ build_dir }}
+
+    - name: Remove existing stuff
+      command: docker rm -f {{ container_name }}
+      failed_when: false
+
+    - name: Run Docker container
+      command: docker run -d --name {{ container_name }} -p {{ host_port }}:80 {{ image_name }}
+
+    - name: Test web server response 
+      uri:
+        url: "http://localhost:{{ host_port }}"
+        return_content: yes
+      register: web_response
+      until: web_response.status == 200
+      retries: 5
+      delay: 3
+
+    - name: Print status
+      debug:
+        msg: "Web server deployed successfull and responding with the status code {{ web_response.status }}"
